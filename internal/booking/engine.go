@@ -156,3 +156,15 @@ func (b *BookingEngine) startExpirationDaemon() {
 		b.mu.Unlock()
 	}
 }
+
+// GetFlight safely retrieves flight details and seat states
+func (b *BookingEngine) GetFlight(flightID string) (*Flight, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	flight, exists := b.flights[flightID]
+	if !exists {
+		return nil, false
+	}
+	return flight, true
+}
