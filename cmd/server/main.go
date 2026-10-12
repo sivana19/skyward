@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"skyward/internal/aggregator"
@@ -38,27 +39,45 @@ func main() {
 	p2 := aggregator.NewMockProvider("Emirates", 510.0, 70*time.Millisecond, 120*time.Millisecond)
 	p3 := aggregator.NewMockProvider("Flydubai", 360.0, 40*time.Millisecond, 90*time.Millisecond)
 	agg := aggregator.NewAggregator(200*time.Millisecond, p1, p2, p3)
+
 	// Serve the web UI directly on root "/"
 	router.StaticFile("/", "./web/index.html")
+
 	api := router.Group("/api/v1")
-	// Fetch Flight and Seat Map State for UI
-	api.GET("/flights/:flight_id/seats", func(c *gin.Context) {
-		flightID := c.Param("flight_id")
-		flight, exists := engine.GetFlight(flightID)
-		if !exists {
-			c.JSON(http.StatusNotFound, gin.H{"error": "flight not found"})
-			return
-		}
-		c.JSON(http.StatusOK, flight)
-	})
 	{
-		// 1. Concurrent Flight Search
-		// GET /api/v1/flights/search?origin=ADD&dest=DXB
+		// Fetch Flight and Seat Map State for UI
+		api.GET("/flights/:flight_id/seats", func(c *gin.Context) {
+			flightID := c.Param("flight_id")
+			flight, exists := engine.GetFlight(flightID)
+			if !exists {
+				c.JSON(http.StatusNotFound, gin.H{"error": "flight not found"})
+				return
+			}
+			c.JSON(http.StatusOK, flight)
+		})
+
+		// 1. Concurrent Flight Search with Optional Price Filtering
+		// GET /api/v1/flights/search?origin=ADD&dest=DXB&max_price=400
 		api.GET("/flights/search", func(c *gin.Context) {
 			origin := c.DefaultQuery("origin", "ADD")
 			dest := c.DefaultQuery("dest", "DXB")
 
 			offers := agg.SearchAll(origin, dest)
+
+			maxPriceStr := c.Query("max_price")
+			if maxPriceStr != "" {
+				maxPrice, err := strconv.ParseFloat(maxPriceStr, 64)
+				if err == nil {
+					var filtered []aggregator.FlightOffer
+					for _, offer := range offers {
+						if offer.PriceUSD <= maxPrice {
+							filtered = append(filtered, offer)
+						}
+					}
+					offers = filtered
+				}
+			}
+
 			c.JSON(http.StatusOK, gin.H{
 				"origin":      origin,
 				"destination": dest,
