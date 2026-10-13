@@ -68,7 +68,7 @@ func (m *MockProvider) FetchOffers(ctx context.Context, origin, dest string) ([]
 			},
 		}, nil
 	case <-ctx.Done():
-		// Request timed out before airline responded
+		// Request timed out or cancelled before airline responded
 		return nil, ctx.Err()
 	}
 }
@@ -87,9 +87,9 @@ func NewAggregator(timeout time.Duration, providers ...Provider) *Aggregator {
 }
 
 // SearchAll queries all airlines in parallel and merges the results
-func (a *Aggregator) SearchAll(origin, dest string) []FlightOffer {
-	// If any provider takes longer than timeout, cancel its search cleanly
-	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
+func (a *Aggregator) SearchAll(ctx context.Context, origin, dest string) []FlightOffer {
+	// Apply aggregation timeout to incoming context
+	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -99,19 +99,16 @@ func (a *Aggregator) SearchAll(origin, dest string) []FlightOffer {
 	// Launch parallel worker for every airline provider
 	for _, p := range a.providers {
 		wg.Add(1)
-		go func(prov Provider) {
+		go func(provider Provider) {
 			defer wg.Done()
 
-			offers, err := prov.FetchOffers(ctx, origin, dest)
-			if err != nil {
-				// Airline was too slow or had an error: skip it, don't crash
-				return
+			// Fetch directly passing ctx; provider handles cancellation & timeout
+			offers, err := provider.FetchOffers(ctx, origin, dest)
+			if err == nil {
+				mu.Lock()
+				allOffers = append(allOffers, offers...)
+				mu.Unlock()
 			}
-
-			// Safely append to the shared slice
-			mu.Lock()
-			allOffers = append(allOffers, offers...)
-			mu.Unlock()
 		}(p)
 	}
 

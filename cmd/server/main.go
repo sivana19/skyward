@@ -62,7 +62,7 @@ func main() {
 			origin := c.DefaultQuery("origin", "ADD")
 			dest := c.DefaultQuery("dest", "DXB")
 
-			offers := agg.SearchAll(origin, dest)
+			offers := agg.SearchAll(c.Request.Context(), origin, dest)
 
 			maxPriceStr := c.Query("max_price")
 			if maxPriceStr != "" {
