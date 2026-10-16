@@ -9,12 +9,12 @@ import (
 
 // FlightOffer represents a flight deal found by a provider
 type FlightOffer struct {
-	Provider    string        `json:"provider"`
-	FlightNo    string        `json:"flight_no"`
-	Origin      string        `json:"origin"`
-	Destination string        `json:"destination"`
-	PriceUSD    float64       `json:"price_usd"`
-	Duration    time.Duration `json:"duration"`
+	Provider    string  `json:"provider"`
+	FlightNo    string  `json:"flight_no"`
+	Origin      string  `json:"origin"`
+	Destination string  `json:"destination"`
+	PriceUSD    float64 `json:"price_usd"`
+	Duration    string  `json:"duration"` // Human-readable e.g. "4h 0m"
 }
 
 // Provider defines the interface any airline or GDS API must satisfy
@@ -45,7 +45,6 @@ func (m *MockProvider) Name() string {
 }
 
 func (m *MockProvider) FetchOffers(ctx context.Context, origin, dest string) ([]FlightOffer, error) {
-	// Simulate variable upstream API network latency
 	latencyRange := int64(m.maxDelay - m.minDelay)
 	var sleepTime time.Duration
 	if latencyRange > 0 {
@@ -56,7 +55,6 @@ func (m *MockProvider) FetchOffers(ctx context.Context, origin, dest string) ([]
 
 	select {
 	case <-time.After(sleepTime):
-		// Upstream returned successfully
 		return []FlightOffer{
 			{
 				Provider:    m.name,
@@ -64,11 +62,10 @@ func (m *MockProvider) FetchOffers(ctx context.Context, origin, dest string) ([]
 				Origin:      origin,
 				Destination: dest,
 				PriceUSD:    m.basePrice + float64(rand.Intn(40)),
-				Duration:    4 * time.Hour,
+				Duration:    "4h 0m",
 			},
 		}, nil
 	case <-ctx.Done():
-		// Request timed out or cancelled before airline responded
 		return nil, ctx.Err()
 	}
 }
@@ -88,7 +85,6 @@ func NewAggregator(timeout time.Duration, providers ...Provider) *Aggregator {
 
 // SearchAll queries all airlines in parallel and merges the results
 func (a *Aggregator) SearchAll(ctx context.Context, origin, dest string) []FlightOffer {
-	// Apply aggregation timeout to incoming context
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 
@@ -96,13 +92,11 @@ func (a *Aggregator) SearchAll(ctx context.Context, origin, dest string) []Fligh
 	var mu sync.Mutex
 	allOffers := make([]FlightOffer, 0)
 
-	// Launch parallel worker for every airline provider
 	for _, p := range a.providers {
 		wg.Add(1)
 		go func(provider Provider) {
 			defer wg.Done()
 
-			// Fetch directly passing ctx; provider handles cancellation & timeout
 			offers, err := provider.FetchOffers(ctx, origin, dest)
 			if err == nil {
 				mu.Lock()
@@ -112,7 +106,6 @@ func (a *Aggregator) SearchAll(ctx context.Context, origin, dest string) []Fligh
 		}(p)
 	}
 
-	// Wait until all airline requests either complete or time out
 	wg.Wait()
 
 	return allOffers
